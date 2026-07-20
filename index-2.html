@@ -85,6 +85,11 @@
       font-family: var(--mono);
       direction: ltr;
       unicode-bidi: isolate;
+      font-variant-numeric: lining-nums tabular-nums;
+      -webkit-font-feature-settings: "tnum" 1, "lnum" 1;
+      font-feature-settings: "tnum" 1, "lnum" 1;
+      letter-spacing: 0.01em;
+      font-weight: 600;
     }
 
     a {
@@ -1534,6 +1539,9 @@
   <footer>
     Natega Thanawya 2026 — أداة استعلام عن النتيجة، وتوقعات التنسيق استرشادية غير رسمية. للتنسيق الرسمي يُرجى مراجعة
     الجهات الرسمية.
+    <div style="margin-top: 8px; font-size: 0.8rem; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;">
+      dev by <a href="https://www.instagram.com/jo_elnasr?igsh=MTQ3a2gwMnBxNWg1eQ==" target="_blank" rel="noopener noreferrer" style="color: var(--navy); font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">jo_elnasr <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5" ry="5"></rect><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line></svg></a>
+    </div>
   </footer>
 
   <script src="app.js"></script>
