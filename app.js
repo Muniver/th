@@ -239,16 +239,15 @@ async function init() {
     els.fileInput.addEventListener("change", onFileSelected);
   }
 
-  // إظهار شاشة التحميل وإخفاء شاشة البحث مؤقتاً حتى يتم تحميل الملفات الأربعة
-  els.viewUpload.hidden = false;
-  els.viewSearch.hidden = true;
+  // عرض شاشة البحث مباشرة بدون انتظار
+  els.viewUpload.hidden = true;
+  els.viewSearch.hidden = false;
   els.viewResult.hidden = true;
   els.viewTop.hidden = true;
-  els.topActions.hidden = true;
-  els.loadingSpinner.style.display = "block";
-  els.loadingTitle.textContent = "جاري تحميل قاعدة البيانات...";
-  els.loadingSub.textContent = "يرجى الانتظار قليلاً، يتم تحميل النتيجة (0/4)...";
+  els.topActions.hidden = false;
+  els.loadingSpinner.style.display = "none";
 
+  // تحميل البيانات في الخلفية بدون رسائل
   try {
     const urls = [
       "data/results_part1.js",
@@ -257,45 +256,25 @@ async function init() {
       "data/results_part4.js"
     ];
 
-    let loadedCount = 0;
     const promises = urls.map(async (url) => {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to load ${url}`);
-      const text = await res.text();
-      loadedCount++;
-      els.loadingSub.textContent = `يرجى الانتظار قليلاً، يتم تحميل النتيجة (${loadedCount}/4)...`;
-      return text;
+      return await res.text();
     });
 
     const parts = await Promise.all(promises);
-    els.loadingTitle.textContent = "جاري معالجة البيانات...";
-    els.loadingSub.textContent = "يرجى الانتظار، يتم دمج الأجزاء وتجهيز البحث...";
-
     const fullScript = parts.join("");
 
-    // تنفيذ الكود المدمج لتعريف window.RESULTS_DATA_ROWS
+    // تنفيذ الكود المدمج
     eval(fullScript);
 
     // تحميل البيانات وبناء الحالة
     const rows = getDataRows();
     buildState(rows);
 
-    // إخفاء شاشة التحميل وإظهار شاشة البحث
-    els.viewUpload.hidden = true;
-    els.viewSearch.hidden = false;
-    els.topActions.hidden = false;
-    els.loadingSpinner.style.display = "none";
   } catch (err) {
     console.error(err);
-    showError("تعذر تحميل قاعدة بيانات النتيجة تلقائياً. يرجى التأكد من وجود الملفات الأربعة في مجلد data.");
-    els.loadingTitle.textContent = "فشل التحميل تلقائياً";
-    els.loadingSub.textContent = "يمكنك اختيار ملف إكسل يدوياً للاستعلام.";
-    els.loadingSpinner.style.display = "none";
-
-    // في حالة الفشل، نظهر شاشة البحث لكي يتمكن المستخدم من رفع ملف إكسل يدوياً إذا أراد
-    els.viewUpload.hidden = true;
-    els.viewSearch.hidden = false;
-    els.topActions.hidden = false;
+    // بدون إظهار أي رسائل خطأ للمستخدم، فقط استمرار في الخلفية
   }
 }
 

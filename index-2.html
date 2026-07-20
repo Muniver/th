@@ -84,6 +84,53 @@
       background-size: 3px 3px;
     }
 
+    /* ---------- Announcement Banner ---------- */
+    .announcement-banner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 999;
+      background: linear-gradient(90deg, #0a0e27, #1a1f3a, #0a0e27);
+      padding: 14px 20px;
+      text-align: center;
+      border-bottom: 2px solid #00D9FF;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 20px rgba(0, 217, 255, 0.3);
+    }
+
+    .announcement-text {
+      font-family: var(--display);
+      font-weight: 900;
+      font-size: clamp(1.3rem, 4vw, 2rem);
+      background: linear-gradient(90deg, #00D9FF, #FFD700, #FF1493, #00D9FF);
+      background-size: 300% 300%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: color-shift 4s ease infinite;
+      letter-spacing: .06em;
+      margin: 0;
+      text-shadow: 0 0 20px rgba(0, 217, 255, 0.5);
+    }
+
+    @keyframes color-shift {
+      0% {
+        background-position: 0% 50%;
+      }
+      50% {
+        background-position: 100% 50%;
+      }
+      100% {
+        background-position: 0% 50%;
+      }
+    }
+
+    /* Adjust main content for fixed banner */
+    body {
+      padding-top: 60px;
+    }
+
     /* ---------- Top bar ---------- */
     .topbar {
       position: relative;
@@ -1324,6 +1371,8 @@
       }
     }
 
+    /* ---------- NEON EFFECT STYLING (removed - now using banner) ---------- */
+
     @media print {
 
       .topbar,
@@ -1361,6 +1410,10 @@
 </head>
 
 <body>
+  <div class="announcement-banner">
+    <p class="announcement-text">ترقبوا نتيجة الدور الاول 2026 حصريا</p>
+  </div>
+
   <div class="grain"></div>
 
   <div class="topbar">
