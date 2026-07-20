@@ -59,6 +59,7 @@ const COLLEGE_TABLES = {
 const state = {
   seats: null,        // Int32Array
   names: [],           // string[]
+  normNames: [],       // string[] normalized names for fast search
   scores: null,        // Float32Array
   cflag: null,          // Uint8Array
   statusCode: null,     // Uint8Array  0 ناجح دور أول, 1 دور ثان, 2 راسب, 3 غياب, 4 غير معروف
@@ -96,6 +97,31 @@ const els = {
 };
 
 let searchMode = "seat";
+let progressInterval = null;
+let progressValue = 0;
+
+function startProgressAnimation() {
+  if (progressInterval) return;
+  progressValue = 0;
+  setProgress(0, "جاري تحميل بيانات النتيجة…");
+  progressInterval = setInterval(() => {
+    if (progressValue >= 98) return;
+    if (progressValue < 50) {
+      progressValue = Math.min(98, progressValue + (Math.random() * 1.1 + 0.8));
+    } else if (progressValue < 80) {
+      progressValue = Math.min(98, progressValue + (Math.random() * 0.7 + 0.4));
+    } else {
+      progressValue = Math.min(98, progressValue + (Math.random() * 0.35 + 0.15));
+    }
+    setProgress(Math.floor(progressValue));
+  }, 120);
+}
+
+function stopProgressAnimation() {
+  if (!progressInterval) return;
+  clearInterval(progressInterval);
+  progressInterval = null;
+}
 
 function playEntryChime() {
   if (window.__entryChimePlayed) return;
@@ -251,7 +277,18 @@ function getChunkedRows() {
 function showError(msg) { els.errorNote.innerHTML = msg; els.errorNote.classList.add("show"); }
 function hideError() { els.errorNote.classList.remove("show"); }
 
-function setProgress() {}
+function setProgress(pct = 0, label = "") {
+  const clamped = Math.max(0, Math.min(100, pct));
+  if (els.progressPct) els.progressPct.textContent = `${clamped}%`;
+  if (els.progressFill) els.progressFill.style.width = `${clamped}%`;
+  if (els.progressText) els.progressText.textContent = label || "جاري تحضير بيانات النتيجة…";
+  if (els.progressWrap) els.progressWrap.classList.toggle("show", clamped < 100);
+
+  const loading = clamped < 100;
+  if (els.loadingSpinner) els.loadingSpinner.style.display = loading ? "block" : "none";
+  if (els.searchBtn) els.searchBtn.disabled = loading;
+  if (els.searchInput) els.searchInput.disabled = loading;
+}
 
 function ensureXlsxLoaded() {
   if (window.XLSX) return Promise.resolve();
@@ -316,44 +353,42 @@ async function init() {
     els.fileInput.addEventListener("change", onFileSelected);
   }
 
-  // عرض شاشة البحث مباشرة بدون انتظار
-  els.viewUpload.hidden = true;
-  els.viewSearch.hidden = false;
+  // عرض شاشة التحميل أولاً ثم الانتقال إلى شاشة البحث بعد اكتمال تحميل البيانات
+  els.viewUpload.hidden = false;
+  els.viewSearch.hidden = true;
   els.viewResult.hidden = true;
   els.viewTop.hidden = true;
   els.topActions.hidden = false;
-  els.loadingSpinner.style.display = "none";
+  startProgressAnimation();
 
-  // تحميل البيانات من جوجل شيت أولًا، ثم نرجع للملفات المحلية إذا فشل
-  try {
-    const rows = await loadRemoteCsv(GOOGLE_SHEET_CSV_URL);
+  let initialized = false;
+  const finishLoad = (rows) => {
+    if (initialized) return;
+    initialized = true;
     buildState(rows);
-    return;
-  } catch (err) {
-    console.warn('Remote CSV load failed, falling back to local data:', err);
-  }
+  };
 
-  try {
-    const urls = [
-      "data/results_part1.js",
-      "data/results_part2.js",
-      "data/results_part3.js",
-      "data/results_part4.js"
-    ];
+  const localPromise = loadFromDataFile()
+    .then((rows) => { finishLoad(rows); return rows; })
+    .catch((err) => {
+      console.warn('Local data load failed:', err);
+      throw err;
+    });
 
-    window.__resultsDataRowsAccumulated = [];
-    for (const url of urls) {
-      await loadResultsPart(url);
-    }
+  const remotePromise = loadRemoteCsv(GOOGLE_SHEET_CSV_URL)
+    .then((rows) => { finishLoad(rows); return rows; })
+    .catch((err) => {
+      console.warn('Remote CSV load failed:', err);
+      throw err;
+    });
 
-    const rows = getDataRows();
-    buildState(rows);
-
-  } catch (err) {
-    console.error(err);
-    if (!window.RESULTS_DATA_ROWS || window.RESULTS_DATA_ROWS.length <= 1) {
-      showError("تعذر تحميل بيانات النتيجة. تأكد من فتح الموقع من سيرفر حقيقي وأن ملفات data متاحة.");
-    }
+  const results = await Promise.allSettled([localPromise, remotePromise]);
+  if (!initialized) {
+    stopProgressAnimation();
+    const localErr = results[0].status === 'rejected' ? results[0].reason : null;
+    const remoteErr = results[1].status === 'rejected' ? results[1].reason : null;
+    console.error('Both data sources failed:', localErr, remoteErr);
+    showError("تعذر تحميل بيانات النتيجة من المصدرين. تأكد من وجود الملف المحلي أو رابط Google Sheets الشغال.");
   }
 }
 
@@ -408,8 +443,8 @@ async function loadFromDataFile() {
         buffer = new Uint8Array(await res.arrayBuffer());
       }
 
-      await parseWorkbook(buffer);
-      return;
+      const rows = await parseWorkbook(buffer, false);
+      return rows;
     } catch (err) {
       lastError = err;
       console.warn(`تعذر تحميل ${fileName}:`, err);
@@ -419,7 +454,7 @@ async function loadFromDataFile() {
   throw lastError || new Error("data_file_not_found");
 }
 
-async function parseWorkbook(buffer) {
+async function parseWorkbook(buffer, build = true) {
   setProgress(55, "جاري تحليل بيانات الطلاب…");
   els.loadingTitle.textContent = "جاري تحليل بيانات الطلاب…";
   await ensureXlsxLoaded();
@@ -431,7 +466,8 @@ async function parseWorkbook(buffer) {
 
   setProgress(72, "جاري بناء الفهارس…");
   els.loadingTitle.textContent = "جاري بناء فهارس الاستعلام…";
-  buildState(rows);
+  if (build) buildState(rows);
+  return rows;
 }
 
 function pickBestSheet(wb) {
@@ -516,6 +552,7 @@ function buildState(rows) {
   state.n = valid;
   state.seats = seats.slice(0, valid);
   state.names = names.slice(0, valid);
+  state.normNames = state.names.map(normalizeArabic);
   state.scores = scores.slice(0, valid);
   state.cflag = cflag.slice(0, valid);
   state.statusCode = statusCode.slice(0, valid);
@@ -549,10 +586,13 @@ function buildState(rows) {
     const rankInfo = rankInGroup(state.cflag[state.stats.topIndex], state.stats.topScore);
     state.stats.topRank = rankInfo ? rankInfo.rank : "—";
   }
-  setProgress(100, "تم!");
-  renderStatStrip();
-  switchView("search");
-  els.topActions.hidden = false;
+  stopProgressAnimation();
+  setProgress(100, "تم تحميل البيانات بنجاح!");
+  setTimeout(() => {
+    renderStatStrip();
+    switchView("search");
+    els.topActions.hidden = false;
+  }, 250);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -717,7 +757,7 @@ function runSearch() {
   const nq = normalizeArabic(q);
   const matches = [];
   for (let i = 0; i < state.n; i++) {
-    if (normalizeArabic(state.names[i]).includes(nq)) {
+    if (state.normNames[i].includes(nq)) {
       matches.push(i);
       if (matches.length >= 60) break;
     }
