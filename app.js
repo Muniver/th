@@ -169,6 +169,60 @@ const DATA_FILE_CANDIDATES = [
   `/${RESULTS_DATA.fileName}`,
 ];
 
+const GOOGLE_SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQToD9NL7zw-Qc1weHzA6Pcu3Q1_Q4XHwOaCAuGcHgWY3jiMc979NkJV4BMmvq7Cw/pub?output=csv';
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(field);
+      field = '';
+    } else if (ch === '\r') {
+      continue;
+    } else if (ch === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += ch;
+    }
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows;
+}
+
+async function loadRemoteCsv(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Failed to load remote CSV: ${res.status}`);
+  const text = await res.text();
+  const rows = parseCsv(text);
+  if (!Array.isArray(rows) || rows.length < 2) {
+    throw new Error('Remote CSV returned no data');
+  }
+  return rows;
+}
+
 function getChunkedRows() {
   if (window.RESULTS_DATA_CHUNK_FILES && Array.isArray(window.RESULTS_DATA_CHUNK_FILES)) {
     const rows = [];
@@ -230,6 +284,29 @@ function getDataRows() {
   return RESULTS_DATA.fallbackRows;
 }
 
+async function loadResultsPart(url) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = url;
+    script.async = false;
+    script.onload = () => {
+      if (!Array.isArray(window.RESULTS_DATA_ROWS) || !window.RESULTS_DATA_ROWS.length) {
+        reject(new Error(`Invalid data format in ${url}`));
+        return;
+      }
+      if (!Array.isArray(window.__resultsDataRowsAccumulated) || !window.__resultsDataRowsAccumulated.length) {
+        window.__resultsDataRowsAccumulated = window.RESULTS_DATA_ROWS.slice();
+      } else {
+        window.__resultsDataRowsAccumulated.push(...window.RESULTS_DATA_ROWS.slice(1));
+        window.RESULTS_DATA_ROWS = window.__resultsDataRowsAccumulated;
+      }
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Failed to load ${url}`));
+    document.head.appendChild(script);
+  });
+}
+
 /* ---------------------------------------------------------------
    5) تحميل وتحليل ملف النتيجة تلقائيًا عند فتح الموقع
 --------------------------------------------------------------- */
@@ -247,7 +324,15 @@ async function init() {
   els.topActions.hidden = false;
   els.loadingSpinner.style.display = "none";
 
-  // تحميل البيانات في الخلفية بدون رسائل
+  // تحميل البيانات من جوجل شيت أولًا، ثم نرجع للملفات المحلية إذا فشل
+  try {
+    const rows = await loadRemoteCsv(GOOGLE_SHEET_CSV_URL);
+    buildState(rows);
+    return;
+  } catch (err) {
+    console.warn('Remote CSV load failed, falling back to local data:', err);
+  }
+
   try {
     const urls = [
       "data/results_part1.js",
@@ -256,25 +341,19 @@ async function init() {
       "data/results_part4.js"
     ];
 
-    const promises = urls.map(async (url) => {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Failed to load ${url}`);
-      return await res.text();
-    });
+    window.__resultsDataRowsAccumulated = [];
+    for (const url of urls) {
+      await loadResultsPart(url);
+    }
 
-    const parts = await Promise.all(promises);
-    const fullScript = parts.join("");
-
-    // تنفيذ الكود المدمج
-    eval(fullScript);
-
-    // تحميل البيانات وبناء الحالة
     const rows = getDataRows();
     buildState(rows);
 
   } catch (err) {
     console.error(err);
-    // بدون إظهار أي رسائل خطأ للمستخدم، فقط استمرار في الخلفية
+    if (!window.RESULTS_DATA_ROWS || window.RESULTS_DATA_ROWS.length <= 1) {
+      showError("تعذر تحميل بيانات النتيجة. تأكد من فتح الموقع من سيرفر حقيقي وأن ملفات data متاحة.");
+    }
   }
 }
 
